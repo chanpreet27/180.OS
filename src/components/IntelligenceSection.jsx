@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, BrainCircuit, RefreshCw, Zap, ArrowRight, Layers, CheckCircle2, Sliders, Command } from 'lucide-react';
+import { Sparkles, BrainCircuit, RefreshCw, Zap, ArrowRight, Layers, Sliders, AlertCircle, History, MessageSquare, Globe, Check } from 'lucide-react';
 import Highlight from './Highlight';
 
 const easeCurve = [0.16, 1, 0.3, 1];
@@ -31,6 +31,87 @@ const features = [
     meta: 'AUTONOMOUS CORE',
   },
 ];
+
+const languageOptions = [
+  { code: 'EN', name: 'English' },
+  { code: 'FR', name: 'Français' },
+  { code: 'ES', name: 'Español' },
+  { code: 'DE', name: 'Deutsch' },
+  { code: 'JA', name: '日本語' },
+];
+
+const translations = {
+  EN: {
+    disclaimer: 'AI can make mistakes. Please verify important information.',
+    placeholder: 'Ask 180.OS Neural Assistant...',
+    send: 'Send',
+    historyHeader: 'CHAT HISTORY',
+    activeContext: '180.OS NEURAL ASSISTANT',
+    suggestedChip: 'Suggest workflow optimization',
+  },
+  FR: {
+    disclaimer: "L'IA peut commettre des erreurs. Veuillez vérifier les informations.",
+    placeholder: "Posez une question à l'assistant 180.OS...",
+    send: 'Envoyer',
+    historyHeader: 'HISTORIQUE DES DISCUSSIONS',
+    activeContext: 'ASSISTANT NEURAL 180.OS',
+    suggestedChip: 'Suggérer des optimisations',
+  },
+  ES: {
+    disclaimer: 'La IA puede cometer errores. Por favor verifique la información.',
+    placeholder: 'Pregunta al asistente 180.OS...',
+    send: 'Enviar',
+    historyHeader: 'HISTORIAL DE CHATS',
+    activeContext: 'ASISTENTE NEURAL 180.OS',
+    suggestedChip: 'Sugerir optimización de flujo',
+  },
+  DE: {
+    disclaimer: 'KI kann Fehler machen. Bitte überprüfen Sie wichtige Informationen.',
+    placeholder: 'Fragen Sie den 180.OS Assistenten...',
+    send: 'Senden',
+    historyHeader: 'CHAT-VERLAUF',
+    activeContext: '180.OS NEURALER ASSISTENT',
+    suggestedChip: 'Workflows optimieren',
+  },
+  JA: {
+    disclaimer: 'AIは間違いを犯す可能性があります。重要情報をご確認ください。',
+    placeholder: '180.OSアシスタントに質問...',
+    send: '送信',
+    historyHeader: 'チャット履歴',
+    activeContext: '180.OS ニューラルアシスタント',
+    suggestedChip: 'ワークフローを最適化',
+  }
+};
+
+const initialThreads = {
+  kernel: {
+    id: 'kernel',
+    title: '01 — Microkernel Architecture & Memory',
+    time: '10:42 AM',
+    messages: [
+      { sender: 'user', text: 'How does the 180.OS microkernel prevent system crashes?' },
+      { sender: 'ai', text: '180.OS isolates drivers and system services in zero-copy user-space memory modules. If a driver fails, the kernel restarts it instantly without dropping your active workspace state.' },
+    ]
+  },
+  spatial: {
+    id: 'spatial',
+    title: '02 — Contextual Spatial UI Compositor',
+    time: '09:15 AM',
+    messages: [
+      { sender: 'user', text: 'Explain how windows are organized automatically.' },
+      { sender: 'ai', text: 'The spatial compositor analyzes task affinity and semantic document links, automatically clustering relevant tools while dimming non-essential background windows.' },
+    ]
+  },
+  privacy: {
+    id: 'privacy',
+    title: '03 — On-Device Neural Tensor Security',
+    time: 'Yesterday',
+    messages: [
+      { sender: 'user', text: 'Does my data leave the device during vector search?' },
+      { sender: 'ai', text: 'No telemetry or document embeddings are transmitted externally. All neural indexing operates 100% locally on system hardware tensor cores.' },
+    ]
+  }
+};
 
 function IntelligenceCard({ feat, idx }) {
   const [isHovered, setIsHovered] = useState(false);
@@ -116,13 +197,35 @@ function IntelligenceCard({ feat, idx }) {
 }
 
 export default function IntelligenceSection() {
-  const [activeAction, setActiveAction] = useState(0);
+  const [threads, setThreads] = useState(initialThreads);
+  const [activeThreadId, setActiveThreadId] = useState('kernel');
+  const [selectedLang, setSelectedLang] = useState('EN');
+  const [inputText, setInputText] = useState('');
 
-  const suggestedActions = [
-    { label: 'Organize research windows & tabs', status: 'Ready', icon: Layers },
-    { label: 'Synthesize document references', status: 'Optimized', icon: Sparkles },
-    { label: 'Prepare kernel memory snapshot', status: 'Standby', icon: Sliders },
-  ];
+  const currentTrans = translations[selectedLang] || translations.EN;
+  const activeThread = threads[activeThreadId] || threads.kernel;
+
+  const handleSendMessage = (e) => {
+    e.preventDefault();
+    if (!inputText.trim()) return;
+
+    const userMsg = inputText.trim();
+    setInputText('');
+
+    const updatedMessages = [
+      ...activeThread.messages,
+      { sender: 'user', text: userMsg },
+      { sender: 'ai', text: `180.OS contextual core evaluated "${userMsg}". Workspace windows and memory allocation updated instantly.` }
+    ];
+
+    setThreads((prev) => ({
+      ...prev,
+      [activeThreadId]: {
+        ...prev[activeThreadId],
+        messages: updatedMessages
+      }
+    }));
+  };
 
   return (
     <section id="intelligence" className="section-container">
@@ -168,53 +271,115 @@ export default function IntelligenceSection() {
         {/* Editorial Whitespace Moment */}
         <div className="editorial-spacer-md" />
 
-        {/* Interactive Contextual Computing Demonstration Panel */}
+        {/* Interactive Contextual AI Chat & Instant History Panel */}
         <motion.div
-          className="contextual-demo-panel"
+          className="contextual-demo-panel ai-chat-demo-panel"
           initial={{ opacity: 0, y: 30 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true, margin: '-60px' }}
           transition={{ duration: 0.9, ease: easeCurve }}
         >
+          {/* Top Bar with Language Selector */}
           <div className="panel-top-bar">
             <div className="panel-status-tag">
               <span className="subtle-pulse-dot" />
-              <span>180.OS CONTEXTUAL ENGINE — LIVE INTENT</span>
+              <span>{currentTrans.activeContext}</span>
             </div>
-            <span className="panel-badge-mono">STANDALONE PROCESS</span>
+
+            {/* Language Selector */}
+            <div className="language-selector-pill">
+              <Globe size={11} className="globe-icon" />
+              {languageOptions.map((lang) => (
+                <button
+                  key={lang.code}
+                  className={`lang-opt-btn ${selectedLang === lang.code ? 'active' : ''}`}
+                  onClick={() => setSelectedLang(lang.code)}
+                  title={lang.name}
+                >
+                  {lang.code}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="panel-inner-grid">
-            <div className="context-state-block">
-              <span className="block-eyebrow">CURRENT SYSTEM CONTEXT</span>
-              <h4 className="context-title">Research / 180.OS Architecture</h4>
-              <p className="context-desc">
-                Analyzing active workspace semantic graph and project files to provide instant single-click workflow optimizations.
-              </p>
-            </div>
-
-            <div className="suggested-actions-block">
-              <span className="block-eyebrow">SUGGESTED ACTIONS</span>
-              <div className="actions-list">
-                {suggestedActions.map((action, idx) => {
-                  const ActionIcon = action.icon;
-                  const isSelected = activeAction === idx;
+          <div className="panel-inner-chat-grid">
+            {/* Left Chat History List (Instant Loading without any loading spinner) */}
+            <div className="chat-history-sidebar">
+              <div className="history-sidebar-header">
+                <History size={13} />
+                <span>{currentTrans.historyHeader}</span>
+              </div>
+              <div className="history-threads-list">
+                {Object.values(threads).map((thread) => {
+                  const isActive = thread.id === activeThreadId;
                   return (
-                    <motion.div
-                      key={action.label}
-                      className={`action-item-row ${isSelected ? 'active' : ''}`}
-                      onClick={() => setActiveAction(idx)}
-                      whileHover={{ x: 4 }}
-                      transition={{ duration: 0.2 }}
+                    <button
+                      key={thread.id}
+                      className={`history-thread-item ${isActive ? 'active' : ''}`}
+                      onClick={() => setActiveThreadId(thread.id)}
                     >
-                      <div className="action-left">
-                        <ActionIcon size={14} className="action-icon" />
-                        <span className="action-text">{action.label}</span>
+                      <MessageSquare size={13} className="thread-icon" />
+                      <div className="thread-info">
+                        <span className="thread-title">{thread.title}</span>
+                        <span className="thread-time">{thread.time}</span>
                       </div>
-                      <span className="action-status">{action.status}</span>
-                    </motion.div>
+                    </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Right Active Chat Conversation Window */}
+            <div className="chat-main-window">
+              <div className="chat-messages-container">
+                <AnimatePresence mode="wait">
+                  <motion.div
+                    key={activeThreadId}
+                    initial={{ opacity: 0.8 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0.8 }}
+                    transition={{ duration: 0.1 }}
+                    className="messages-wrapper"
+                  >
+                    {activeThread.messages.map((msg, mIdx) => (
+                      <div
+                        key={mIdx}
+                        className={`chat-bubble-row ${msg.sender === 'user' ? 'user-row' : 'ai-row'}`}
+                      >
+                        <div className="bubble-avatar">
+                          {msg.sender === 'user' ? 'YOU' : '180'}
+                        </div>
+                        <div className="bubble-content">
+                          <p>{msg.text}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </motion.div>
+                </AnimatePresence>
+              </div>
+
+              {/* Bottom Prompt Bar with Very Small Native Language Disclaimer */}
+              <div className="chat-prompt-area">
+                {/* Very Small Native Language Disclaimer */}
+                <div className="native-disclaimer-line">
+                  <AlertCircle size={10} className="disclaimer-alert-icon" />
+                  <span>{currentTrans.disclaimer}</span>
+                </div>
+
+                {/* Prompt Input Form */}
+                <form onSubmit={handleSendMessage} className="prompt-input-form">
+                  <input
+                    type="text"
+                    placeholder={currentTrans.placeholder}
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    className="prompt-input-field"
+                  />
+                  <button type="submit" className="prompt-submit-btn">
+                    <span>{currentTrans.send}</span>
+                    <Send size={12} />
+                  </button>
+                </form>
               </div>
             </div>
           </div>
