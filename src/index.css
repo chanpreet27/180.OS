@@ -831,6 +831,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 @media (max-width: 767px) {
@@ -847,6 +849,9 @@ body {
   mix-blend-mode: multiply;
   mask-image: radial-gradient(ellipse at center, black 70%, rgba(0, 0, 0, 0.85) 88%, transparent 100%);
   -webkit-mask-image: radial-gradient(ellipse at center, black 70%, rgba(0, 0, 0, 0.85) 88%, transparent 100%);
+  transform: translateZ(0);
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
 /* Preloader Loading Overlay */
