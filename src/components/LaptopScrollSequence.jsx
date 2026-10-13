@@ -7,9 +7,9 @@ const easeCurve = [0.16, 1, 0.3, 1];
 
 const getFrameUrl = (index) => {
   const frameNum = String(index + 1).padStart(3, '0');
-  const baseUrl = import.meta.env.BASE_URL || './';
-  const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-  return `${cleanBase}laptop-frames/ezgif-frame-${frameNum}.jpg`;
+  const base = import.meta.env.BASE_URL || '/';
+  const prefix = base.endsWith('/') ? base : `${base}/`;
+  return `${prefix}laptop-frames/ezgif-frame-${frameNum}.jpg`;
 };
 
 export default function LaptopScrollSequence() {
