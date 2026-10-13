@@ -5,6 +5,15 @@ import Highlight from './Highlight';
 const TOTAL_FRAMES = 240;
 const easeCurve = [0.16, 1, 0.3, 1];
 
+// Generate 25 strategic anchor frames spanning the full 0% to 100% opening angle
+const ANCHOR_INDICES = [];
+for (let i = 0; i < TOTAL_FRAMES; i += 10) {
+  ANCHOR_INDICES.push(i);
+}
+if (!ANCHOR_INDICES.includes(TOTAL_FRAMES - 1)) {
+  ANCHOR_INDICES.push(TOTAL_FRAMES - 1);
+}
+
 const getFrameUrl = (index) => {
   const frameNum = String(index + 1).padStart(3, '0');
   const base = import.meta.env.BASE_URL || '/';
@@ -23,76 +32,63 @@ export default function LaptopScrollSequence() {
   const renderedFrameRef = useRef(-1);
   const animationFrameIdRef = useRef(null);
 
-  // Physics & scroll tracking
+  // Scroll & physics tracking
   const targetProgressRef = useRef(0);
   const currentProgressRef = useRef(0);
-  const isIntersectingRef = useRef(false);
-  const sectionTopRef = useRef(0);
-  const sectionHeightRef = useRef(1);
+  const isIntersectingRef = useRef(true); // Default true so initial measurements and rendering never get blocked
 
   // Direct DOM references for 120 FPS telemetry (ZERO React re-renders)
   const hingeSpanRef = useRef(null);
   const frameSpanRef = useRef(null);
   const mobileFrameSpanRef = useRef(null);
 
-  // State only for discrete phase changes & initial load overlay
+  // Discrete phase state & loading status
   const [isInitialReady, setIsInitialReady] = useState(false);
   const [imagesLoadedCount, setImagesLoadedCount] = useState(0);
   const [phaseIndex, setPhaseIndex] = useState(0);
   const activePhaseRef = useRef(0);
 
-  // Fast canvas drawing routine with nearest-loaded-frame fallback
+  // Find nearest loaded frame across the entire sequence so animation NEVER freezes
+  const findNearestLoadedFrame = useCallback((target) => {
+    // 1. Direct hit
+    if (bitmapsRef.current[target] || (imagesRef.current[target]?.complete && imagesRef.current[target].naturalWidth > 0)) {
+      return target;
+    }
+
+    // 2. Search outward symmetrically across all 240 frames
+    let bestIdx = -1;
+    let minDistance = Infinity;
+
+    for (let i = 0; i < TOTAL_FRAMES; i++) {
+      const hasFrame = bitmapsRef.current[i] || (imagesRef.current[i]?.complete && imagesRef.current[i].naturalWidth > 0);
+      if (hasFrame) {
+        const dist = Math.abs(i - target);
+        if (dist < minDistance) {
+          minDistance = dist;
+          bestIdx = i;
+          if (dist <= 1) break; // Close enough to break early
+        }
+      }
+    }
+
+    return bestIdx;
+  }, []);
+
+  // Fast canvas drawing routine
   const drawFrame = useCallback((frameIndex) => {
     const ctx = ctxRef.current;
     if (!ctx) return;
 
-    // 1. Try exact ImageBitmap (fastest zero-copy GPU blit)
-    let source = bitmapsRef.current[frameIndex];
+    const chosenIdx = findNearestLoadedFrame(frameIndex);
+    if (chosenIdx === -1) return;
 
-    // 2. Try exact HTMLImageElement
-    if (!source) {
-      const img = imagesRef.current[frameIndex];
-      if (img && img.complete && img.naturalWidth > 0) {
-        source = img;
-      }
-    }
-
-    // 3. Fallback to nearest loaded frame to eliminate any stutter/blank flash
-    if (!source) {
-      for (let offset = 1; offset < 25; offset++) {
-        const prevIdx = frameIndex - offset;
-        if (prevIdx >= 0) {
-          if (bitmapsRef.current[prevIdx]) {
-            source = bitmapsRef.current[prevIdx];
-            break;
-          }
-          const pImg = imagesRef.current[prevIdx];
-          if (pImg && pImg.complete && pImg.naturalWidth > 0) {
-            source = pImg;
-            break;
-          }
-        }
-        const nextIdx = frameIndex + offset;
-        if (nextIdx < TOTAL_FRAMES) {
-          if (bitmapsRef.current[nextIdx]) {
-            source = bitmapsRef.current[nextIdx];
-            break;
-          }
-          const nImg = imagesRef.current[nextIdx];
-          if (nImg && nImg.complete && nImg.naturalWidth > 0) {
-            source = nImg;
-            break;
-          }
-        }
-      }
-    }
-
+    const source = bitmapsRef.current[chosenIdx] || imagesRef.current[chosenIdx];
     if (source) {
       ctx.drawImage(source, 0, 0, 1920, 1080);
     }
-  }, []);
+  }, [findNearestLoadedFrame]);
 
-  // Initialize Canvas with performance-optimized attributes
+  // Initialize Canvas
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -111,114 +107,147 @@ export default function LaptopScrollSequence() {
     }
   }, []);
 
-  // High-throughput staged image loader with off-thread createImageBitmap
+  // Adaptive Priority Image Loader
   useEffect(() => {
     let isCancelled = false;
-    let loadedCount = 0;
+    let totalLoaded = 0;
+    const loadingSet = new Set();
 
     const loadSingleFrame = async (idx) => {
-      if (isCancelled || bitmapsRef.current[idx]) return;
+      if (isCancelled || idx < 0 || idx >= TOTAL_FRAMES) return;
+      if (bitmapsRef.current[idx] || (imagesRef.current[idx] && imagesRef.current[idx].complete)) return;
+      if (loadingSet.has(idx)) return;
+
+      loadingSet.add(idx);
       const url = getFrameUrl(idx);
 
-      // Attempt off-thread ImageBitmap decoding
+      // Off-thread ImageBitmap decode
       if (typeof window.createImageBitmap === 'function') {
         try {
           const response = await fetch(url);
           const blob = await response.blob();
           if (isCancelled) return;
-          const bitmap = await window.createImageBitmap(blob);
+          const bmp = await window.createImageBitmap(blob);
           if (isCancelled) return;
-          bitmapsRef.current[idx] = bitmap;
-          loadedCount++;
+
+          bitmapsRef.current[idx] = bmp;
+          totalLoaded++;
 
           if (idx === 0 && renderedFrameRef.current === -1) {
             drawFrame(0);
             renderedFrameRef.current = 0;
           }
-          if (loadedCount >= 15 && !isInitialReady) {
+
+          if (!isInitialReady && (totalLoaded >= 15 || idx === ANCHOR_INDICES[ANCHOR_INDICES.length - 1])) {
             setIsInitialReady(true);
           }
-          if (loadedCount % 10 === 0 || loadedCount === TOTAL_FRAMES) {
-            setImagesLoadedCount(loadedCount);
+
+          if (totalLoaded % 12 === 0 || totalLoaded === TOTAL_FRAMES) {
+            setImagesLoadedCount(totalLoaded);
           }
           return;
         } catch {
-          // fallback to HTMLImageElement
+          // Fall back to Image() below
         }
       }
 
-      // Fallback loader
+      // Fallback HTMLImageElement
       const img = new Image();
       img.src = url;
       img.onload = () => {
         if (isCancelled) return;
         imagesRef.current[idx] = img;
-        loadedCount++;
+        totalLoaded++;
 
         if (idx === 0 && renderedFrameRef.current === -1) {
           drawFrame(0);
           renderedFrameRef.current = 0;
         }
-        if (loadedCount >= 15 && !isInitialReady) {
+
+        if (!isInitialReady && (totalLoaded >= 15 || idx === ANCHOR_INDICES[ANCHOR_INDICES.length - 1])) {
           setIsInitialReady(true);
         }
-        if (loadedCount % 10 === 0 || loadedCount === TOTAL_FRAMES) {
-          setImagesLoadedCount(loadedCount);
+
+        if (totalLoaded % 12 === 0 || totalLoaded === TOTAL_FRAMES) {
+          setImagesLoadedCount(totalLoaded);
         }
       };
     };
 
-    // Staged Priority Loading:
-    // 1. Frame 0 immediately
+    // 1. Immediately load frame 0 (poster frame: closed laptop)
     loadSingleFrame(0);
 
-    // 2. Next 30 opening frames immediately
-    const loadBatch = async (indices) => {
-      const concurrency = 6;
-      for (let i = 0; i < indices.length; i += concurrency) {
+    // 2. Schedule anchor frames after 150ms to keep initial page mount & hero video completely lag-free
+    const timer = setTimeout(async () => {
+      if (isCancelled) return;
+
+      // Load all 25 Anchor frames first (covers 0% through 100% of the entire animation!)
+      for (let i = 0; i < ANCHOR_INDICES.length; i += 4) {
         if (isCancelled) break;
-        const chunk = indices.slice(i, i + concurrency);
+        const chunk = ANCHOR_INDICES.slice(i, i + 4);
         await Promise.all(chunk.map((idx) => loadSingleFrame(idx)));
       }
-    };
 
-    const runStagedPipeline = async () => {
-      // Stage 1: Opening frames 1..30
-      const initialIndices = [];
-      for (let i = 1; i <= 30; i++) initialIndices.push(i);
-      await loadBatch(initialIndices);
+      setIsInitialReady(true);
 
-      // Stage 2: Strategic keyframes across entire sequence (every 6th frame)
-      const keyframeIndices = [];
-      for (let i = 36; i < TOTAL_FRAMES; i += 6) keyframeIndices.push(i);
-      await loadBatch(keyframeIndices);
+      // 3. Progressive background fill of all intermediate frames
+      const fillRemaining = async () => {
+        const remaining = [];
+        for (let i = 0; i < TOTAL_FRAMES; i++) {
+          if (!ANCHOR_INDICES.includes(i)) remaining.push(i);
+        }
 
-      // Stage 3: All remaining intermediate frames
-      const remainingIndices = [];
-      for (let i = 31; i < TOTAL_FRAMES; i++) {
-        if (i % 6 !== 0) remainingIndices.push(i);
-      }
-      await loadBatch(remainingIndices);
-    };
+        // Fill in chunks of 4 concurrent requests to preserve network fluidness
+        for (let i = 0; i < remaining.length; i += 4) {
+          if (isCancelled) break;
 
-    runStagedPipeline();
+          // Dynamically prioritize frames around user's current scroll target
+          const currentTargetFrame = Math.round(targetProgressRef.current * (TOTAL_FRAMES - 1));
+          for (let p = Math.max(0, currentTargetFrame - 4); p <= Math.min(TOTAL_FRAMES - 1, currentTargetFrame + 8); p++) {
+            if (!bitmapsRef.current[p] && !imagesRef.current[p]) {
+              loadSingleFrame(p);
+            }
+          }
+
+          const chunk = remaining.slice(i, i + 4);
+          await Promise.all(chunk.map((idx) => loadSingleFrame(idx)));
+        }
+      };
+
+      fillRemaining();
+    }, 150);
 
     return () => {
       isCancelled = true;
+      clearTimeout(timer);
     };
   }, [drawFrame, isInitialReady]);
 
-  // Measure section geometry for zero-reflow scroll tracking
-  const measureSection = useCallback(() => {
+  // Robust live scroll calculation directly from section bounding rect
+  const updateScrollProgress = useCallback(() => {
     const section = sectionRef.current;
     if (!section) return;
+
     const rect = section.getBoundingClientRect();
-    const scrollY = window.scrollY || window.pageYOffset;
-    sectionTopRef.current = rect.top + scrollY;
-    sectionHeightRef.current = Math.max(1, section.offsetHeight - window.innerHeight);
+    const totalScroll = section.offsetHeight - window.innerHeight;
+    if (totalScroll <= 0) return;
+
+    // Direct physical position:
+    // When section top reaches viewport top (rect.top <= 0), animation begins
+    // When section has scrolled through its sticky height (rect.top <= -totalScroll), animation is complete
+    let p = 0;
+    if (rect.top >= 0) {
+      p = 0;
+    } else if (rect.top <= -totalScroll) {
+      p = 1;
+    } else {
+      p = -rect.top / totalScroll;
+    }
+
+    targetProgressRef.current = Math.max(0, Math.min(1, p));
   }, []);
 
-  // IntersectionObserver to pause loop and trigger measurements
+  // IntersectionObserver to sleep RAF loop when far away
   useEffect(() => {
     const section = sectionRef.current;
     if (!section) return;
@@ -228,38 +257,31 @@ export default function LaptopScrollSequence() {
         const entry = entries[0];
         isIntersectingRef.current = entry.isIntersecting;
         if (entry.isIntersecting) {
-          measureSection();
+          updateScrollProgress();
         }
       },
-      { rootMargin: '300px 0px' }
+      { rootMargin: '600px 0px' }
     );
 
     observer.observe(section);
-    window.addEventListener('resize', measureSection, { passive: true });
+    return () => observer.disconnect();
+  }, [updateScrollProgress]);
 
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('resize', measureSection);
-    };
-  }, [measureSection]);
-
-  // Zero-reflow Scroll Handler
+  // Scroll and Resize listeners
   useEffect(() => {
     const handleScroll = () => {
-      if (!isIntersectingRef.current) return;
-      const scrollY = window.scrollY || window.pageYOffset;
-      const progress = Math.max(0, Math.min(1, (scrollY - sectionTopRef.current) / sectionHeightRef.current));
-      targetProgressRef.current = progress;
+      updateScrollProgress();
     };
 
     window.addEventListener('scroll', handleScroll, { passive: true });
-    measureSection();
-    handleScroll();
+    window.addEventListener('resize', handleScroll, { passive: true });
+    updateScrollProgress();
 
     return () => {
       window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleScroll);
     };
-  }, [measureSection]);
+  }, [updateScrollProgress]);
 
   // Delta-time normalized 120 FPS animation & interpolation loop
   useEffect(() => {
@@ -275,13 +297,16 @@ export default function LaptopScrollSequence() {
         return;
       }
 
+      // Check live scroll progress in sync with animation frame
+      updateScrollProgress();
+
       const dt = Math.min((now - lastTime) / 1000, 0.05);
       lastTime = now;
 
-      // Exponential decay smoothing: crisp, responsive, mathematically consistent at 60Hz and 120Hz
+      // Snappy physics: smooth exponential decay dampening
       const diff = targetProgressRef.current - currentProgressRef.current;
       if (Math.abs(diff) > 0.00005) {
-        const decay = 22; // Snappy responsiveness with buttery fluid glide
+        const decay = 24; // Ultra-crisp response, zero rubber-band delay
         const factor = 1 - Math.exp(-decay * dt);
         currentProgressRef.current += diff * factor;
       } else {
@@ -332,7 +357,7 @@ export default function LaptopScrollSequence() {
         cancelAnimationFrame(animationFrameIdRef.current);
       }
     };
-  }, [drawFrame]);
+  }, [drawFrame, updateScrollProgress]);
 
   // Phase Typography Data
   const phaseContent = [

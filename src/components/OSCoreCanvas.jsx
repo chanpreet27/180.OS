@@ -117,12 +117,13 @@ export default function OSCoreCanvas({ scrollProgress = 0 }) {
     pointLight.position.set(0, 0, 3);
     scene.add(pointLight);
 
-    // --- Animation & Render Loop ---
+    // --- Animation & Render Loop with IntersectionObserver ---
     let reqId;
-    let targetRotY = 0;
-    let targetRotX = 0;
+    let isVisible = false;
 
     const animate = () => {
+      if (!isVisible) return;
+
       // Base continuous rotation
       osGroup.rotation.y += 0.004;
       nodeGroup.rotation.y -= 0.008;
@@ -141,7 +142,20 @@ export default function OSCoreCanvas({ scrollProgress = 0 }) {
       reqId = requestAnimationFrame(animate);
     };
 
-    animate();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        isVisible = entry.isIntersecting;
+        if (isVisible) {
+          cancelAnimationFrame(reqId);
+          reqId = requestAnimationFrame(animate);
+        } else {
+          cancelAnimationFrame(reqId);
+        }
+      },
+      { rootMargin: '200px 0px' }
+    );
+    observer.observe(container);
 
     // Resize Handler
     const handleResize = () => {
@@ -151,11 +165,13 @@ export default function OSCoreCanvas({ scrollProgress = 0 }) {
       camera.aspect = newW / newH;
       camera.updateProjectionMatrix();
       renderer.setSize(newW, newH);
+      if (isVisible) renderer.render(scene, camera);
     };
 
     window.addEventListener('resize', handleResize);
 
     return () => {
+      observer.disconnect();
       cancelAnimationFrame(reqId);
       window.removeEventListener('resize', handleResize);
       if (container.contains(renderer.domElement)) {
